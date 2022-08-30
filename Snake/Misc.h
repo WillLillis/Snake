@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+// __FUNCSIG__ redef here?
+
 /****************************************************************************
 * display_error
 *
@@ -44,6 +46,31 @@ void display_error(const char* file_name, int line_num, const char* func_sig, bo
 		printf("Press [ENTER] to continue...\n");
 		char throw_away = getchar();
 	}
+}
+
+/****************************************************************************
+* clear_screen
+*
+* - Clears the console's screen by calling the relevant OS's clear screen
+* command
+*
+* Parameters :
+* - none
+*
+* Returns :
+* - none
+****************************************************************************/
+// combine with erase_lines function, allow some special argument to specify erasing all lines?
+inline void clear_screen()
+{
+#if defined(_WIN32) || defined(_WIN64)
+	system("cls");
+#elif  defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(__MACH__)
+	system("clear");
+#else
+	display_error(__FILE__, __LINE__, __FUNCSIG__, false,
+		"Failed to clear the screen. Unable to identify operating system in use.");
+#endif // _WIN32 OR _WIN64
 }
 
 
