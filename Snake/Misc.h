@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-// __FUNCSIG__ redef here?
-
 /****************************************************************************
 * display_error
 *
@@ -60,7 +58,6 @@ void display_error(const char* file_name, int line_num, const char* func_sig, bo
 * Returns :
 * - none
 ****************************************************************************/
-// combine with erase_lines function, allow some special argument to specify erasing all lines?
 inline void clear_screen()
 {
 #if defined(_WIN32) || defined(_WIN64)

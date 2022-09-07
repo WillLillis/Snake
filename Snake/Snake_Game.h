@@ -33,6 +33,8 @@ typedef struct user_input_loop_args {
 	USER_INPUT input_store;
 }user_input_loop_args;
 
+
+
 typedef struct COOR{
 	uint_fast8_t x_coor;
 	uint_fast8_t y_coor;
@@ -46,22 +48,31 @@ typedef struct SNAKE_SEG{
 
 typedef struct SNAKE_OBJ{
 	COOR head_loc;
-	SNAKE_SEG body[MAX_SNAKE_LEN];
+	SNAKE_SEG body[MAX_SNAKE_LEN + 1];
 	size_t first_seg_index;
 	size_t tail_index;
 }SNAKE_OBJ;
 
-// not sure if we're going to use this...
+// need to add this to init function, initialize lock!
 typedef struct BOARD{
+	pthread_mutex_t game_state_lock;
+	SNAKE_OBJ snake;
 	COOR apple_loc;
 	uint_fast8_t score;
 	uint_fast8_t x_len;
 	uint_fast8_t y_len;
+	char* frame_buff;
 }BOARD;
 
-// has to be down here, as SNAKE_OBJ and BOARD structs need to be defined
+typedef struct game_init_args {
+	user_input_loop_args user_input;
+	BOARD board;
+}game_init_args;
+
+// this #include has to be down here, as the SNAKE_OBJ and BOARD structs need to be defined
 #include "Snake_Graphics.h"
 
+// add in display_error prints for all potential cases of init failure
 bool user_input_init(USER_INPUT* struct_in)
 {
 	if (struct_in == NULL)
@@ -83,18 +94,79 @@ bool user_input_init(USER_INPUT* struct_in)
 	return true;
 }
 
+bool snake_init(SNAKE_OBJ* snake)
+{
+	// initialize the head location
+	snake->head_loc.x_coor = 2;
+	snake->head_loc.y_coor = 2;
+
+	// initialize the first body segment
+	snake->body[MAX_SNAKE_LEN].loc.x_coor = 1;
+	snake->body[MAX_SNAKE_LEN].loc.x_coor = 2;
+	snake->first_seg_index = MAX_SNAKE_LEN;
+	snake->tail_index = MAX_SNAKE_LEN;
+
+	return true;
+}
+
+bool board_init(BOARD* board)
+{
+	// initialize the game_state lock for the struct
+	board->game_state_lock = PTHREAD_MUTEX_INITIALIZER;
+	if (pthread_mutex_init(&(board->game_state_lock), NULL) != 0)
+	{
+		return false;
+	}
+
+	// initialize the snake object
+	if (!snake_init(&(board->snake)))
+	{
+		return false;
+	}
+
+	board->x_len = BOARD_LEN_X;
+	board->y_len = BOARD_LEN_Y;
+
+	// initialize first apple in the middle of the board
+	board->apple_loc.x_coor = board->x_len / 2;
+	board->apple_loc.y_coor = board->y_len / 2;
+
+	// initialize the score
+	board->score = 0;
+
+	// initialize frame_buff pointer to NULL
+		// the graphics thread will take care of allocating/ initializeing this memory
+	board->frame_buff = NULL;
+
+	return true;
+}
+
 // need to add board init here
-bool game_init(user_input_loop_args* input_args)
+bool game_init(game_init_args* input_args)
 {
 	if (input_args == NULL)
 	{
 		return false;
 	}
-	input_args->game_continue = true;
 
-	srand((unsigned int)time(NULL)); // seed the random number generator for our apple locations
+	// user input stuff
+	if (!user_input_init(&(input_args->user_input.input_store)))
+	{
+		return false;
+	}
+	input_args->user_input.game_continue = true;
 
-	return user_input_init(&(input_args->input_store));
+	// seed the random number generator for our apple locations
+	srand((unsigned int)time(NULL)); 
+
+	// initialize the board struct, which in turn also initializes the snake struct within
+	if (!board_init(&(input_args->board)))
+	{
+		return false;
+	}
+
+
+	return true;
 }
 
 void* user_input_loop(user_input_loop_args* argptr)
@@ -147,35 +219,38 @@ bool is_inside_snake(const SNAKE_OBJ* snake, const COOR coor)
 	return true;
 }
 
-bool update_game_state(SNAKE_OBJ* snake, const char snake_dir, BOARD* board)
+bool update_game_state(BOARD* board, const char snake_dir, const char* frame_buff)
 {
 	bool ate_apple = false;
+
+	pthread_mutex_lock(&(board->game_state_lock));
 	// save the old head location before we update it
-	COOR old_head_loc = { .x_coor = snake->head_loc.x_coor,.y_coor = snake->head_loc.y_coor };
+	COOR old_head_loc = { .x_coor = board->snake.head_loc.x_coor,.y_coor = board->snake.head_loc.y_coor };
 
 	// then update the head's position
 	switch (snake_dir) {
 	case KEY_UP:
-		snake->head_loc.y_coor++;
+		board->snake.head_loc.y_coor++;
 		break;
 	case KEY_DOWN:
-		snake->head_loc.y_coor--;
+		board->snake.head_loc.y_coor--;
 		break;
 	case KEY_RIGHT:
-		snake->head_loc.x_coor++;
+		board->snake.head_loc.x_coor++;
 		break;
 	case KEY_LEFT:
-		snake->head_loc.x_coor--;
+		board->snake.head_loc.x_coor--;
 		break;
 	}
 
-	COOR curr_head_loc = snake->head_loc;
+	COOR curr_head_loc = board->snake.head_loc;
 
 	// now check if the snake's head collided with any of the walls, or itself
 	if (curr_head_loc.x_coor == 0 || curr_head_loc.x_coor == board->x_len
 		|| curr_head_loc.y_coor == 0 || curr_head_loc.y_coor == board->y_len
-		|| is_inside_snake(snake, curr_head_loc))
+		|| is_inside_snake(&(board->snake), curr_head_loc))
 	{
+		pthread_mutex_unlock(&(board->game_state_lock));
 		return false;
 	}
 
@@ -188,31 +263,63 @@ bool update_game_state(SNAKE_OBJ* snake, const char snake_dir, BOARD* board)
 		board->score += 100;
 
 		// new apple location
+		uint_fast16_t num_attempts = 0;
 		COOR new_apple_loc = old_head_loc; // old head location is now inside the snake-> guarantees the while loop executes at least once
-		while (is_inside_snake(snake, new_apple_loc) // can't spawn a new apple inside the snake's body...
+		while (is_inside_snake(&(board->snake), new_apple_loc) // can't spawn a new apple inside the snake's body...
 			|| (curr_head_loc.x_coor == new_apple_loc.x_coor && curr_head_loc.y_coor == new_apple_loc.y_coor)) // ... or inside of its head
 		{
+			// poor performance when snake fills up majority of board-> what's a good way to mitigate against this?
+				// allow for certain number of rand attempts, then just go through frame buffer until a space char is found
 			new_apple_loc.x_coor = (rand() % (board->x_len - 1)) + 1;
 			new_apple_loc.y_coor = (rand() % (board->y_len - 1)) + 1;
-		}
+			num_attempts++;
 
+			if (num_attempts > 10) // 10 is arbitrary
+			{
+				uint_fast16_t x_len = board->x_len;
+				uint_fast16_t y_len = board->y_len;
+
+				for (uint_fast16_t x = 0; x < x_len; x++)
+				{
+					for (uint_fast16_t y = 0; y < y_len; y++)
+					{
+						if (frame_buff[X_Y_TO_INDEX(x, y, x_len + 1, y_len)] == ' ') // + 1 needed to account for space taken up by '\n' chars
+						{
+							new_apple_loc.x_coor = x;
+							new_apple_loc.y_coor = y;
+							goto Apple_Done;
+						}
+					}
+				}
+			}
+		}
+Apple_Done:
 		board->apple_loc = new_apple_loc;
 	}
 
 	// then a new segment "one forward" from the previous first segment
-	snake->first_seg_index = snake->first_seg_index != 0 ? snake->first_seg_index - 1 : MAX_SNAKE_LEN - 1;
+	board->snake.first_seg_index = board->snake.first_seg_index != 0 ? board->snake.first_seg_index - 1 : MAX_SNAKE_LEN - 1;
 	// and fill in the information for that entry...
-	snake->body[snake->first_seg_index].loc = old_head_loc;
+	board->snake.body[board->snake.first_seg_index].loc = old_head_loc;
 
 	if (!ate_apple) // tail doesn't move up if an apple is consumed...
 	{
 		// update the SNAKE's tail index (same deal as updating the head)
-		snake->tail_index = snake->tail_index != 0 ? snake->tail_index - 1 : MAX_SNAKE_LEN - 1;
+		board->snake.tail_index = board->snake.tail_index != 0 ? board->snake.tail_index - 1 : MAX_SNAKE_LEN - 1;
 		// code is not executed if apple is eaten->snake's length increase
 			// end of tail stays still for one "tick", head jumps forward!
 				// watched this at 25% speed https://www.youtube.com/watch?v=zIkBYwdkuTk&t=57s&ab_channel=GreerViau
 	}
 	
-
+	pthread_mutex_unlock(&(board->game_state_lock));
 	return true;
+}
+
+// game loop in here, either create a menu() function to call or just call this from main()
+void play_game()
+{
+	// board size determination?
+	// declare all the things here
+
+	//game_init()
 }
