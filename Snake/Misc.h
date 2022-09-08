@@ -1,6 +1,7 @@
 #pragma once
 #include <stdio.h>
 #include <stdarg.h>
+#include <windows.h>
 
 /****************************************************************************
 * display_error
@@ -103,6 +104,21 @@ void erase_lines(uint_fast16_t num_lines)
 inline void set_cursor_position(uint_fast16_t x, uint_fast16_t y, uint_fast16_t board_height)
 {
 	printf("\033[%hu;%huH", board_height - y, x);
+}
+
+// https://cboard.cprogramming.com/windows-programming/55672-maximizing-console-window-full-screen.html?highlight=alt+enter+console
+void set_console_fullscreen()
+{
+	HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	COORD NewSBSize = GetLargestConsoleWindowSize(hOut);
+	SMALL_RECT DisplayArea = { 0, 0, 0, 0 };
+
+	SetConsoleScreenBufferSize(hOut, NewSBSize);
+
+	DisplayArea.Right = NewSBSize.X - 1;
+	DisplayArea.Bottom = NewSBSize.Y - 1;
+
+	SetConsoleWindowInfo(hOut, TRUE, &DisplayArea);
 }
 
 

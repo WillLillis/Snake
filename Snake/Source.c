@@ -8,6 +8,8 @@
 
 int main()
 {
+	set_console_fullscreen();
+
 	pthread_t input_thread;
 	pthread_t graphics_thread;
 
@@ -41,7 +43,6 @@ int main()
 
 		if (!game_continue)
 		{
-			printf("Done!\n");
 			break;
 		}
 
