@@ -8,6 +8,7 @@
 #include <assert.h> // asserts for testing purposes
 #include <stdlib.h> // srand() and rand()
 #include <time.h> // time() function to seed srand()
+#include "Misc.h"
 
 #define NOOP			(void)0
 
@@ -22,6 +23,12 @@
 #define BOARD_LEN_Y		40
 #define MAX_SNAKE_LEN	100 // Needs to be a function of the board size?
 
+#ifndef X_Y_TO_INDEX
+	#define X_Y_TO_INDEX(x, y, x_len, y_len)	((y_len - 1 - (y)) * x_len) + x
+#endif // !X_Y_TO_INDEX
+
+
+
 // We'll start by making a way to take in user input asyncronously
 typedef struct USER_INPUT {
 	pthread_mutex_t lock;
@@ -29,11 +36,9 @@ typedef struct USER_INPUT {
 }USER_INPUT;
 
 typedef struct user_input_loop_args {
-	bool game_continue;
+	bool game_over;
 	USER_INPUT input_store;
 }user_input_loop_args;
-
-
 
 typedef struct COOR{
 	uint_fast8_t x_coor;
@@ -44,6 +49,7 @@ typedef struct COOR{
 // but I'll leave it organized this way for now in case I find the need to add more information down the line...
 typedef struct SNAKE_SEG{
 	COOR loc;
+	bool used;
 }SNAKE_SEG;
 
 typedef struct SNAKE_OBJ{
@@ -64,13 +70,10 @@ typedef struct BOARD{
 	char* frame_buff;
 }BOARD;
 
-typedef struct game_init_args {
+typedef struct game_args{
 	user_input_loop_args user_input;
 	BOARD board;
-}game_init_args;
-
-// this #include has to be down here, as the SNAKE_OBJ and BOARD structs need to be defined
-#include "Snake_Graphics.h"
+}game_args;
 
 // add in display_error prints for all potential cases of init failure
 bool user_input_init(USER_INPUT* struct_in)
@@ -97,14 +100,23 @@ bool user_input_init(USER_INPUT* struct_in)
 bool snake_init(SNAKE_OBJ* snake)
 {
 	// initialize the head location
-	snake->head_loc.x_coor = 2;
-	snake->head_loc.y_coor = 2;
+	snake->head_loc.x_coor = BOARD_LEN_X / 2;
+	snake->head_loc.y_coor = BOARD_LEN_Y / 2;;
 
 	// initialize the first body segment
-	snake->body[MAX_SNAKE_LEN].loc.x_coor = 1;
-	snake->body[MAX_SNAKE_LEN].loc.x_coor = 2;
+	// arbitrary starting values, may change to middle of the screen or something later
+	snake->body[MAX_SNAKE_LEN].loc.x_coor = snake->head_loc.x_coor - 1;
+	snake->body[MAX_SNAKE_LEN].loc.y_coor = snake->head_loc.y_coor;
 	snake->first_seg_index = MAX_SNAKE_LEN;
 	snake->tail_index = MAX_SNAKE_LEN;
+	snake->body[MAX_SNAKE_LEN].used = true;
+
+	// initialize rest of the body array with valid (yet nonsense) x, y coordinates 
+	for (size_t curr_seg = 0; curr_seg < MAX_SNAKE_LEN; curr_seg++)
+	{
+		snake->body[curr_seg].used = false;
+	}
+
 
 	return true;
 }
@@ -128,8 +140,8 @@ bool board_init(BOARD* board)
 	board->y_len = BOARD_LEN_Y;
 
 	// initialize first apple in the middle of the board
-	board->apple_loc.x_coor = board->x_len / 2;
-	board->apple_loc.y_coor = board->y_len / 2;
+	board->apple_loc.x_coor = (3 * board->x_len) / 4;
+	board->apple_loc.y_coor = (3 * board->y_len) / 4;
 
 	// initialize the score
 	board->score = 0;
@@ -142,7 +154,7 @@ bool board_init(BOARD* board)
 }
 
 // need to add board init here
-bool game_init(game_init_args* input_args)
+bool game_init(game_args* input_args)
 {
 	if (input_args == NULL)
 	{
@@ -154,7 +166,7 @@ bool game_init(game_init_args* input_args)
 	{
 		return false;
 	}
-	input_args->user_input.game_continue = true;
+	input_args->user_input.game_over = false;
 
 	// seed the random number generator for our apple locations
 	srand((unsigned int)time(NULL)); 
@@ -165,14 +177,21 @@ bool game_init(game_init_args* input_args)
 		return false;
 	}
 
-
 	return true;
+}
+
+char get_user_input(user_input_loop_args* argptr)
+{
+	pthread_mutex_lock(&(argptr->input_store.lock));
+	char ret_key = argptr->input_store.move_key;
+	pthread_mutex_unlock(&(argptr->input_store.lock));
+	return ret_key;
 }
 
 void* user_input_loop(user_input_loop_args* argptr)
 {
 	char user_key = KEY_UP;
-	while (argptr->game_continue)
+	while (!(argptr->game_over))
 	{
 		user_key = _toupper(_getch());
 		// need to be careful here...make sure other thread only copies value when it has the lock and then gives it back up immediately after
@@ -207,16 +226,16 @@ void* user_input_loop(user_input_loop_args* argptr)
 
 bool is_inside_snake(const SNAKE_OBJ* snake, const COOR coor)
 {
-	for (size_t curr_seg = snake->tail_index; curr_seg <= snake->first_seg_index; curr_seg = (curr_seg != 0) ? curr_seg - 1 : MAX_SNAKE_LEN - 1)
+	for (size_t curr_seg = snake->tail_index; curr_seg >= snake->first_seg_index; curr_seg = (curr_seg != 0) ? curr_seg - 1 : MAX_SNAKE_LEN - 1)
 	{
 		if (snake->body[curr_seg].loc.x_coor == coor.x_coor // not sure if just testing equality with the COOR structs will work here
 			&& snake->body[curr_seg].loc.y_coor == coor.y_coor)
 		{
-			return false;
+			return true;
 		}
 	}
 
-	return true;
+	return false;
 }
 
 bool update_game_state(BOARD* board, const char snake_dir, const char* frame_buff)
@@ -299,6 +318,7 @@ Apple_Done:
 
 	// then a new segment "one forward" from the previous first segment
 	board->snake.first_seg_index = board->snake.first_seg_index != 0 ? board->snake.first_seg_index - 1 : MAX_SNAKE_LEN - 1;
+	board->snake.body[board->snake.first_seg_index].used = true;
 	// and fill in the information for that entry...
 	board->snake.body[board->snake.first_seg_index].loc = old_head_loc;
 

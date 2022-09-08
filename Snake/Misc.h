@@ -70,4 +70,39 @@ inline void clear_screen()
 #endif // _WIN32 OR _WIN64
 }
 
+/****************************************************************************
+* erase_lines
+*
+* - Clears the specified number of lines in the console
+* - Uses ASCII escape sequences
+* - https://copyprogramming.com/howto/c-how-do-i-erase-a-line-from-the-console
+*
+* Parameters :
+* - num_lines : the number of lines to clear
+*
+* Returns :
+* - none
+****************************************************************************/
+// does this work on Mac?
+void erase_lines(uint_fast16_t num_lines)
+{
+	if (num_lines > 0)
+	{
+		printf("\x1b[2K"); // Delete current line
+
+		for (uint_fast16_t line = 1; line < num_lines; line++) // line = 1 because we included the first line
+		{
+			printf("\x1b[1A"); // Move cursor up one
+			printf("\x1b[2K"); // Delete the entire line
+		}
+		printf("\r"); // Resume the cursor at beginning of line
+	}
+}
+
+// only valid with game coordinates!
+inline void set_cursor_position(uint_fast16_t x, uint_fast16_t y, uint_fast16_t board_height)
+{
+	printf("\033[%hu;%huH", board_height - y, x);
+}
+
 

@@ -1,97 +1,71 @@
-#define DEBUG // informative print statements about what's going on
+//#define DEBUG // informative print statements about what's going on
 #include <pthread.h> // threads!
-#include "Snake_Game.h" // main code for the game
-#include "Misc.h" // random helper functions
+#include "Snake_Graphics.h" // main code for the game
 #include <windows.h> // Need for Sleep() function rn...
+#include <time.h>
 
 
 
 int main()
 {
-	//user_input_loop_args user_input_args;
+	pthread_t input_thread;
+	pthread_t graphics_thread;
 
-	//if (!game_init(&user_input_args))
-	//{
-	//	display_error(__FILE__, __LINE__, __FUNCSIG__, true, 
-	//		"Error initializing game resources!");
-	//}
+	game_args game_args;
+	display_game_args display_args;
 
-	//pthread_t input_thread;
-	//char user_key;
-
-	//// actually needed
-	//pthread_create(&input_thread, NULL, user_input_loop, &user_input_args);
-
-	//// just testing stuff to make sure it works...
-	//pthread_mutex_lock(&(user_input_args.input_store.lock));
-	//user_key = user_input_args.input_store.move_key;
-	//pthread_mutex_unlock(&(user_input_args.input_store.lock));
-
-	//Sleep(10000); // play with it for 10 seconds... then set the quit flag and make sure it joins
-	//
-	//user_input_args.game_continue = false;
-
-	//pthread_join(input_thread, NULL);
-
-	// going to start testing the graphics....
-	// let's try just seeing if the borders are saved in the frame buffer correctly
-
-	size_t x_len = 40 + 1;
-	size_t y_len = 40;
-
-	char* frame_buff = (char*)malloc((x_len * y_len + 1) * sizeof(char)); // + 1 for \0 at end of the buffer
-
-	if (frame_buff == NULL)
+	if (!game_init(&game_args))
 	{
-		clear_screen();
-		display_error(__FILE__, __LINE__, __FUNCSIG__, true,
-			"Error occured while preparing display resources.");
-		return NULL;
+		return -1;
+	}
+	if (!graphics_init(&display_args, &(game_args.board)))
+	{
+		return -1;
 	}
 
-	// initialize everything to a space, except the ends of the rows
-	/*for (size_t y = 0; y < y_len; y++)
+	pthread_create(&input_thread, NULL, user_input_loop, &(game_args.user_input));
+	pthread_create(&graphics_thread, NULL, display_game, &(display_args));
+
+	Sleep(100);
+	
+	bool game_continue = true;
+	char snake_dir = KEY_UP;
+	clock_t start, diff;
+	uint32_t ms = 0;
+	uint32_t game_tick_rate = 1000; // once every second, to start at least...
+
+	while (game_continue)
 	{
-		for (size_t x = 0; x < x_len - 1; x++)
+		snake_dir = get_user_input(&(game_args.user_input));
+		game_continue = update_game_state(&(game_args.board), snake_dir, game_args.board.frame_buff);
+
+		if (!game_continue)
 		{
-			frame_buff[X_Y_TO_INDEX(x, y, x_len, y_len)] = SPACE_CHAR;
+			printf("Done!\n");
+			break;
 		}
-		frame_buff[X_Y_TO_INDEX(x_len - 1, y, x_len + 1, y_len)] = '\n';
-	}
-	frame_buff[x_len * y_len + 1] = '\0';*/
-	memset(frame_buff, SPACE_CHAR, x_len * y_len * sizeof(char));
-	frame_buff[x_len * y_len] = '\0';
-	for (size_t i = 1; i < y_len; i++)
-	{
-		frame_buff[i * x_len - 1] = '\n';
-	}
 
-	//// fill in borders here, only needs to happen once
-	//// top and bottom rows
-	for (size_t curr_col = 0; curr_col < x_len - 1; curr_col++)
-	{
-		frame_buff[X_Y_TO_INDEX(curr_col, y_len - 1, x_len, y_len)] = BORDER_CHAR; // top row
-		frame_buff[X_Y_TO_INDEX(curr_col, 0, x_len, y_len)] = BORDER_CHAR; // bottom row
+		start = clock();
+		ms = 0;
+		while (ms < game_tick_rate)
+		{
+			diff = clock() - start;
+			ms = (diff * 1000) / CLOCKS_PER_SEC;
+		}
 	}
 
-	// left and right sides
-	for (size_t curr_row = 0; curr_row < y_len; curr_row++)
-	{
-		frame_buff[X_Y_TO_INDEX(0, curr_row, x_len, y_len)] = BORDER_CHAR; // left side
-		frame_buff[X_Y_TO_INDEX(x_len - 1 - 1, curr_row, x_len, y_len)] = BORDER_CHAR; // right side
-	}
+	game_args.user_input.game_over = true;
+	display_args.game_over = true;
 
-	printf("%s", frame_buff);
-
-
+	pthread_join(input_thread, NULL);
+	pthread_join(graphics_thread, NULL);
 
 	return 0;
 }
 
-// what's next?
-	// need to modify init function so that all resources are set up at the start
-	// winning conditions?
-	// properly calculate max snake length?
-	// work on some display stuff so we can start visually testing
-	// for purposes of apple spawning...
-		// use frame_buffer with update_game_state-> after certain number of failed random placements of apple, just iterate through until a spot is found?
+// The game is working well enough for actual testing!!!!!
+// there's clearly a ton of stuff we need to clean up, but its operating at least
+// need to take a look at how the snake_obj struct is updated as it moves...
+	// the head seems to be responding to movement, but the body parts behind aren't clearing properly
+	// prolly just some sloppy code
+// Also need to rework how the frame buffer is used-> do we need for anything besides keeping track of where the snake body is?
