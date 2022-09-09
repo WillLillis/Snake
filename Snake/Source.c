@@ -1,10 +1,7 @@
-//#define DEBUG // informative print statements about what's going on
-#include <pthread.h> // threads!
 #include "Snake_Graphics.h" // main code for the game
-#include <windows.h> // Need for Sleep() function rn...
-#include <time.h>
-
-
+#include <pthread.h> // threads!
+#include <windows.h> // Need for Sleep() function, window control
+#include <time.h> // main game loop needs some sort of timekeeping
 
 int main()
 {
@@ -20,7 +17,7 @@ int main()
 	{
 		return -1;
 	}
-	if (!graphics_init(&display_args, &(game_args.board)))
+	if (!graphics_init(&display_args, &(game_args.board), &(game_args.user_input.input_store)))
 	{
 		return -1;
 	}
@@ -28,17 +25,29 @@ int main()
 	pthread_create(&input_thread, NULL, user_input_loop, &(game_args.user_input));
 	pthread_create(&graphics_thread, NULL, display_game, &(display_args));
 
-	Sleep(100);
-	
+	Sleep(100); // fudge factor... give the threads some time to create and such 
+
 	bool game_continue = true;
 	char snake_dir = KEY_UP;
+	char snake_dir_temp;
 	clock_t start, diff;
 	uint32_t ms = 0;
-	uint32_t game_tick_rate = 1000; // once every second, to start at least...
+	uint32_t game_tick_rate = 250; // need to play with this...
 
 	while (game_continue)
 	{
-		snake_dir = get_user_input(&(game_args.user_input));
+		snake_dir_temp = get_user_input(&(game_args.user_input));
+		if (snake_dir_temp == KEY_UP && snake_dir == KEY_DOWN // can't move opposite your current direction of motion
+			|| snake_dir_temp == KEY_DOWN && snake_dir == KEY_UP
+			|| snake_dir_temp == KEY_RIGHT && snake_dir == KEY_LEFT
+			|| snake_dir_temp == KEY_LEFT && snake_dir == KEY_RIGHT)
+		{
+			;
+		}
+		else
+		{
+			snake_dir = snake_dir_temp;
+		}
 		game_continue = update_game_state(&(game_args.board), snake_dir, game_args.board.frame_buff);
 
 		if (!game_continue)
@@ -46,13 +55,15 @@ int main()
 			break;
 		}
 
+		// if we move the start update above the get_user_input and update_game_state calls, 
+		// the drawing in the game breaks because the graphics thread updates too slowly to keep up with the game update thread
 		start = clock();
 		ms = 0;
-		while (ms < game_tick_rate)
-		{
+
+		do {
 			diff = clock() - start;
 			ms = (diff * 1000) / CLOCKS_PER_SEC;
-		}
+		} while (ms < game_tick_rate);
 	}
 
 	game_args.user_input.game_over = true;
@@ -64,9 +75,7 @@ int main()
 	return 0;
 }
 
-// The game is working well enough for actual testing!!!!!
-// there's clearly a ton of stuff we need to clean up, but its operating at least
-// need to take a look at how the snake_obj struct is updated as it moves...
-	// the head seems to be responding to movement, but the body parts behind aren't clearing properly
-	// prolly just some sloppy code
-// Also need to rework how the frame buffer is used-> do we need for anything besides keeping track of where the snake body is?
+// take another look at usage of frame_buff
+	// still need something for efficient apple random placement when snake is filling up board, but frame_buff no longer needed
+// go through and comment/ clean up everything
+// need to check for winning conditions

@@ -1,8 +1,9 @@
 #pragma once
-#include <stdio.h>
-#include <memory.h>
 #include "Snake_Game.h"
 #include "Misc.h"
+#include <stdio.h>
+#include <memory.h>
+
 
 /*
 *
@@ -29,14 +30,18 @@
 * Important note, the x_len - 1 column is reserved for '\n' chars, the
 * game should not access it, it's last column should only be x_len - 1
 * 
-* Need to rethink how we're managing the frame buffer, this is already 
+* Might need to rethink how we're managing the frame buffer, this is already 
 * getting fairly convoluted
 * 
 */
 
 #define X_Y_TO_INDEX(x, y, x_len, y_len)	((y_len - 1 - (y)) * x_len) + x
 #define BORDER_CHAR							0xDB // ASCII white square character
-#define SNAKE_HEAD_CHAR						'+'
+//#define SNAKE_HEAD_CHAR					'+'
+#define SNAKE_HEAD_UP						'^'
+#define SNAKE_HEAD_DOWN						'v'
+#define SNAKE_HEAD_RIGHT					'>'
+#define SNAKE_HEAD_LEFT						'<'
 #define SNAKE_BODY_CHAR						'='
 #define APPLE_CHAR							'*'
 #define SPACE_CHAR							' '
@@ -44,10 +49,11 @@
 typedef struct display_game_args{
 	bool game_over; // starts as false->true to signal to stop updating
 	BOARD* board;
+	USER_INPUT* user_input;
 	char* frame_buff_out;
 }display_game_args;
 
-bool graphics_init(display_game_args* argptr, BOARD* board_ptr) 
+bool graphics_init(display_game_args* argptr, BOARD* board_ptr, USER_INPUT* user_input_ptr)
 {
 	if (argptr == NULL || board_ptr == NULL)
 	{
@@ -56,21 +62,26 @@ bool graphics_init(display_game_args* argptr, BOARD* board_ptr)
 
 	argptr->game_over = false;
 	argptr->board = board_ptr;
+	argptr->user_input = user_input_ptr;
 	argptr->frame_buff_out = NULL;
 	return true;
 }
 
-// draws the current game state to the console
+// used to draw the initial board
 void draw_game(char* frame_buff)
 {
-	// can maybe implement some optimizations here?
 	printf("%s", frame_buff);
 	return;
 }
 
+// displays a game over message in the middle of the board
 void display_gameover(char* frame_buff)
 {
-
+	// set cursor to middle of board
+	set_cursor_position(BOARD_LEN_X / 2 - 5, BOARD_LEN_Y / 2, BOARD_LEN_Y); // -5 to center the message being printed (10 characters)
+	printf("GAME OVER!");
+	set_cursor_position(BOARD_LEN_X + 1, BOARD_LEN_Y + 1, BOARD_LEN_Y);
+	Sleep(500);
 }
 
 // driver function for displaying the game, to be used to create the graphics thread from the main thread
@@ -114,9 +125,8 @@ void* display_game(display_game_args* argptr)
 	}
 
 	// draw initial snake body here as well...
-	for (size_t curr_seg = argptr->board->snake.tail_index; curr_seg >= argptr->board->snake.first_seg_index; curr_seg = (curr_seg != 0) ? curr_seg - 1 : MAX_SNAKE_LEN - 1)
+	for (size_t curr_seg = argptr->board->snake.tail_index; curr_seg >= argptr->board->snake.first_seg_index; curr_seg = (curr_seg != 0) ? curr_seg - 1 : MAX_SNAKE_LEN)
 	{
-		size_t test_index = X_Y_TO_INDEX(argptr->board->snake.body[curr_seg].loc.x_coor, argptr->board->snake.body[curr_seg].loc.y_coor, x_len, y_len);
 		frame_buff[X_Y_TO_INDEX(argptr->board->snake.body[curr_seg].loc.x_coor, argptr->board->snake.body[curr_seg].loc.y_coor, x_len, y_len)] = SNAKE_BODY_CHAR;
 	}
 
@@ -124,55 +134,71 @@ void* display_game(display_game_args* argptr)
 
 	clear_screen();
 
-	size_t old_tail_index;
+	// some variables used in the loop below...
+	size_t old_tail_index = MAX_SNAKE_LEN;
 	uint_fast32_t board_height = argptr->board->y_len;
+	char move_key = KEY_UP;
+	char snake_head_char = SNAKE_HEAD_UP;
 
 	printf("\033[?25l"); // hides the cursor
-	printf("\n%s", frame_buff);
+	printf("%s", frame_buff); // puts up the game's walls
 
 	while (!(argptr->game_over))
 	{
-		pthread_mutex_lock(&(argptr->board->game_state_lock));
+		// so technically it's bad practice to not use these locks, as we can get outdated information from the game state
+		// but realistically this game is relatively slow paced so any issues like that will likely not be noticable
+			// taking off the lock seems to help make the game look less "jerky"
+		//pthread_mutex_lock(&(argptr->board->game_state_lock));
 
 		// apple
-		//frame_buff[X_Y_TO_INDEX(argptr->board->apple_loc.x_coor, argptr->board->apple_loc.y_coor, x_len, y_len)] = APPLE_CHAR;
-		//printf("\033[%u;%uH", board_height + 1 - argptr->board->apple_loc.y_coor, argptr->board->apple_loc.x_coor); // columns line up, need to flip line numbers...
-		set_cursor_position(argptr->board->apple_loc.x_coor, argptr->board->apple_loc.y_coor, board_height + 1);
+		set_cursor_position(argptr->board->apple_loc.x_coor, argptr->board->apple_loc.y_coor, board_height);
 		printf("%c", APPLE_CHAR);
 
 		// snake head
-		//frame_buff[X_Y_TO_INDEX(argptr->board->snake.head_loc.x_coor, argptr->board->snake.head_loc.y_coor, x_len, y_len)] = SNAKE_HEAD_CHAR;
-		//printf("\033[%u;%uH", board_height + 1 - argptr->board->snake.head_loc.y_coor, argptr->board->snake.head_loc.x_coor);
-		set_cursor_position(argptr->board->snake.head_loc.x_coor, argptr->board->snake.head_loc.y_coor, board_height + 1);
-		printf("%c", SNAKE_HEAD_CHAR);
+			// doing it this way does allow you to have a head face the opposite way you're going...but I don't feel like fixing that (would just be extra complication)
+		set_cursor_position(argptr->board->snake.head_loc.x_coor, argptr->board->snake.head_loc.y_coor, board_height);
+		pthread_mutex_lock(&(argptr->user_input->lock));
+		move_key = argptr->user_input->move_key;
+		pthread_mutex_unlock(&(argptr->user_input->lock));
+		switch (move_key) {
+		case KEY_UP:
+			snake_head_char = SNAKE_HEAD_UP;
+			break;
+		case KEY_DOWN:
+			snake_head_char = SNAKE_HEAD_DOWN;
+			break;
+		case KEY_LEFT:
+			snake_head_char = SNAKE_HEAD_LEFT;
+			break;
+		case KEY_RIGHT:
+			snake_head_char = SNAKE_HEAD_RIGHT;
+			break;
+		}
+		printf("%c", snake_head_char);
 		
 		// snake body
-		//frame_buff[X_Y_TO_INDEX(argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.x_coor,
-		//	argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.y_coor, x_len, y_len)] = SNAKE_BODY_CHAR;
-		/*printf("\033[%u;%uH", 
-			board_height + 1 - argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.y_coor,
-			argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.x_coor);*/
+			// draw the newest body segment where the head just was
 		set_cursor_position(argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.x_coor, 
-			argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.y_coor, board_height + 1);
+			argptr->board->snake.body[argptr->board->snake.first_seg_index].loc.y_coor, board_height);
 		printf("%c", SNAKE_BODY_CHAR);
 
-		// clear spot where end of tail used to be
-		// issues here with uninitialized memory on first pass through
+		// and erase the old body segment at the end of the tail
 		old_tail_index = argptr->board->snake.tail_index == MAX_SNAKE_LEN ? 0 : argptr->board->snake.tail_index + 1;
-		if ((argptr->board->snake.body[old_tail_index].used))
+		if (argptr->board->snake.body[old_tail_index].used) // only need to do this if there actually was a segment there 
 		{
-			//frame_buff[X_Y_TO_INDEX(argptr->board->snake.body[old_tail_index].loc.x_coor,
-			//	argptr->board->snake.body[old_tail_index].loc.y_coor, x_len, y_len)] = SPACE_CHAR;
-			//printf("\033[%u;%uH", board_height + 1 - argptr->board->snake.body[old_tail_index].loc.y_coor, argptr->board->snake.body[old_tail_index].loc.x_coor);
 			set_cursor_position(argptr->board->snake.body[old_tail_index].loc.x_coor, 
 				argptr->board->snake.body[old_tail_index].loc.y_coor, board_height);
 			printf("%c", SPACE_CHAR);
 		}
+
+		// Score
+		printf("\033[%u;%uH", board_height, argptr->board->x_len + 1);
+		printf("Score: %u", argptr->board->score);
 		
-		pthread_mutex_unlock(&(argptr->board->game_state_lock));
+		//pthread_mutex_unlock(&(argptr->board->game_state_lock));
 	}
-	printf("\033[?25h"); // un-hide cursor
-	printf("\033[%u;%uH", board_height + 1, argptr->board->x_len + 1);
+	//printf("\033[?25h"); // un-hide cursor
+	
 
 	display_gameover(frame_buff);
 

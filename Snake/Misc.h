@@ -84,7 +84,6 @@ inline void clear_screen()
 * Returns :
 * - none
 ****************************************************************************/
-// does this work on Mac?
 void erase_lines(uint_fast16_t num_lines)
 {
 	if (num_lines > 0)
@@ -100,13 +99,14 @@ void erase_lines(uint_fast16_t num_lines)
 	}
 }
 
-// only valid with game coordinates!
+// sets cursor position on screen, only valid with game coordinates!
 inline void set_cursor_position(uint_fast16_t x, uint_fast16_t y, uint_fast16_t board_height)
 {
 	printf("\033[%hu;%huH", board_height - y, x);
 }
 
 // https://cboard.cprogramming.com/windows-programming/55672-maximizing-console-window-full-screen.html?highlight=alt+enter+console
+// game window can start out too small, cursor gets all bugged out if you try to resize...better to just start with it blown up a bit
 void set_console_fullscreen()
 {
 	HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
