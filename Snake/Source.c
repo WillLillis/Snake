@@ -26,13 +26,17 @@ int main()
 	pthread_create(&graphics_thread, NULL, display_game, &(display_args));
 
 	Sleep(100); // fudge factor... give the threads some time to create and such 
+	while (!game_args.user_input.thread_running || !display_args.thread_running)
+	{
+		;
+	}
 
 	bool game_continue = true;
 	char snake_dir = KEY_UP;
 	char snake_dir_temp;
 	clock_t start, diff;
 	uint32_t ms = 0;
-	uint32_t game_tick_rate = 125; // need to play with this...
+	uint32_t game_tick_rate = 250; // need to play with this...
 
 	while (game_continue)
 	{

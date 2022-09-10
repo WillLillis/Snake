@@ -18,7 +18,7 @@
 #define KEY_LEFT		'A'
 
 // arbitrary board size
-#define BOARD_LEN_X		40
+#define BOARD_LEN_X		80
 #define BOARD_LEN_Y		40
 #define MAX_SNAKE_LEN	BOARD_LEN_X * BOARD_LEN_Y + 1 // Needs to be a function of the board size?
 
@@ -34,6 +34,7 @@ typedef struct USER_INPUT {
 
 // wrapper struct for USER_INPUT, allows for game_over signaling to the user input thread
 typedef struct user_input_loop_args {
+	bool thread_running;
 	bool game_over;
 	USER_INPUT input_store;
 }user_input_loop_args;
@@ -84,6 +85,7 @@ bool user_input_init(USER_INPUT* struct_in)
 			"Recieved an invalid memory address for the USER_INPUT* arg");
 		return false;
 	}
+
 	struct_in->lock = PTHREAD_MUTEX_INITIALIZER;
 	int init_success = pthread_mutex_init(&(struct_in->lock), NULL); // initialize struct's lock to default, unlocked state
 
@@ -165,6 +167,8 @@ bool game_init(game_args* input_args)
 {
 	if (input_args == NULL)
 	{
+		display_error(__FILE__, __LINE__, __FUNCSIG__, false,
+			"Invalid memory addressed passed to function.");
 		return false;
 	}
 
@@ -176,6 +180,7 @@ bool game_init(game_args* input_args)
 		return false;
 	}
 	input_args->user_input.game_over = false;
+	input_args->user_input.thread_running = false;
 
 	// seed the random number generator for our apple locations
 	srand((unsigned int)time(NULL)); 
@@ -203,6 +208,7 @@ char get_user_input(user_input_loop_args* argptr)
 // main loop for getting the user's input, spins the entire game until the game_over flag is set
 void* user_input_loop(user_input_loop_args* argptr)
 {
+	argptr->thread_running = true;
 	char user_key = KEY_UP;
 	while (!(argptr->game_over))
 	{

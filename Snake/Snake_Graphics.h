@@ -52,6 +52,7 @@
 #define SPACE_CHAR							' '
 
 typedef struct display_game_args{
+	bool thread_running;
 	bool game_over; // starts as false->true to signal to stop updating
 	BOARD* board;
 	USER_INPUT* user_input;
@@ -62,9 +63,11 @@ bool graphics_init(display_game_args* argptr, BOARD* board_ptr, USER_INPUT* user
 {
 	if (argptr == NULL || board_ptr == NULL)
 	{
+		display_error(__FILE__, __LINE__, __FUNCSIG__, true,
+			"Invalid memory address(es) passed to function.");
 		return false;
 	}
-
+	argptr->thread_running = false;
 	argptr->game_over = false;
 	argptr->board = board_ptr;
 	argptr->user_input = user_input_ptr;
@@ -93,6 +96,7 @@ void display_gameover(char* frame_buff)
 // must be called AFTER other init functions (SNAKE_OBJ struct must already be initialized)
 void* display_game(display_game_args* argptr)
 {
+	argptr->thread_running = true;
 	// frame buffer...
 	size_t x_len = argptr->board->x_len + 1; // + 1 needed to store '\n' chars at end of each line
 	size_t y_len = argptr->board->y_len;
@@ -193,11 +197,11 @@ void* display_game(display_game_args* argptr)
 		{
 			set_cursor_position(argptr->board->snake.body[old_tail_index].loc.x_coor, 
 				argptr->board->snake.body[old_tail_index].loc.y_coor, board_height);
-			printf("%c", SPACE_CHAR);
+			printf("%c", (char)SPACE_CHAR);
 		}
 
 		// Score
-		printf("\033[%u;%uH", board_height, x_len + 1);
+		printf("\033[%u;%zuH", (uint32_t)board_height, x_len + 1);
 		printf("Score: %u", argptr->board->score);
 		
 		//pthread_mutex_unlock(&(argptr->board->game_state_lock));
