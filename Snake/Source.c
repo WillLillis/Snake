@@ -32,10 +32,12 @@ int main()
 	char snake_dir_temp;
 	clock_t start, diff;
 	uint32_t ms = 0;
-	uint32_t game_tick_rate = 250; // need to play with this...
+	uint32_t game_tick_rate = 125; // need to play with this...
 
 	while (game_continue)
 	{
+		start = clock();
+		ms = 0;
 		snake_dir_temp = get_user_input(&(game_args.user_input));
 		if (snake_dir_temp == KEY_UP && snake_dir == KEY_DOWN // can't move opposite your current direction of motion
 			|| snake_dir_temp == KEY_DOWN && snake_dir == KEY_UP
@@ -55,10 +57,9 @@ int main()
 			break;
 		}
 
-		// if we move the start update above the get_user_input and update_game_state calls, 
-		// the drawing in the game breaks because the graphics thread updates too slowly to keep up with the game update thread
-		start = clock();
-		ms = 0;
+		// start = clock() and ms = 0 have to be here if we're using the game_state_lock mutex,
+		// but without them they're fine up at the top of the loop, which should make the game's 
+		// timing more consistent
 
 		do {
 			diff = clock() - start;

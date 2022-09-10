@@ -30,6 +30,11 @@
 * Important note, the x_len - 1 column is reserved for '\n' chars, the
 * game should not access it, it's last column should only be x_len - 1
 * 
+* The board's x_len is different from the graphics x_len. This is definitely a bit 
+* of a confusing point but I'd rather not go through and reorganize everything since 
+* it's working
+*	- graphics x_len = board x_len + 1, to account for the '\n' character
+* 
 * Might need to rethink how we're managing the frame buffer, this is already 
 * getting fairly convoluted
 * 
@@ -192,7 +197,7 @@ void* display_game(display_game_args* argptr)
 		}
 
 		// Score
-		printf("\033[%u;%uH", board_height, argptr->board->x_len + 1);
+		printf("\033[%u;%uH", board_height, x_len + 1);
 		printf("Score: %u", argptr->board->score);
 		
 		//pthread_mutex_unlock(&(argptr->board->game_state_lock));
@@ -208,4 +213,3 @@ void* display_game(display_game_args* argptr)
 	}
 	return NULL; 
 }
-

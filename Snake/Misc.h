@@ -120,5 +120,3 @@ void set_console_fullscreen()
 
 	SetConsoleWindowInfo(hOut, TRUE, &DisplayArea);
 }
-
-
